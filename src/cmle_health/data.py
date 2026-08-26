@@ -4,16 +4,20 @@ split json schema (per source): {train|val|test: [{index, id, label(1=reliable,0
   text: {original, llama3.1, qwen2.5, chatglm4, gemma2, mistral},
   image: {original, flux, pag, sd15, sdxl, vae}, source, is_english}]}
 
-Tasks:
-  - Task A "reliability" : original content only, label = 1 (reliable) / 0 (unreliable)
-  - Task B "originality" : every content variant becomes an instance; original = human (0), generators = AI (1)
+Tasks (both heads trained jointly when task="both"):
+  - label_a (reliability): 1 = reliable / 0 = unreliable  (inherited from source article)
+  - label_b (originality): 0 = human-generated / 1 = AI-generated
+
+Every sample expands into content variants:
+  - text modality    : original + 5 LLM texts (6 variants)
+  - image modality   : original + 5 gen images (6 variants)
+  - both modalities  : index-aligned pairs (original/original, llama3.1/flux, ...) -> 6 variants
 """
 
 from __future__ import annotations
 
 import json
 import os
-from typing import Optional
 
 import torch
 from PIL import Image
@@ -21,8 +25,8 @@ from torch.utils.data import Dataset
 
 TEXT_KEYS = ["original", "llama3.1", "qwen2.5", "chatglm4", "gemma2", "mistral"]
 IMAGE_KEYS = ["original", "flux", "pag", "sd15", "sdxl", "vae"]
-AI_TEXT_KEYS = TEXT_KEYS[1:]
-AI_IMAGE_KEYS = IMAGE_KEYS[1:]
+# index-aligned pairing for modality="both" (text key i <-> image key i)
+PAIRED_IMAGE_KEYS = IMAGE_KEYS  # same order, aligned by index
 
 
 def load_splits(path: str):
@@ -39,13 +43,12 @@ class MMHealthDataset(Dataset):
     def __init__(
         self,
         samples: list,
-        task: str = "reliability",          # "reliability" | "originality" | "both"
+        task: str = "both",                 # "reliability" | "originality" | "both"
         modality: str = "text",             # "text" | "image" | "both"
         image_root: str = "",
         max_len: int = 384,
         tokenizer=None,
         image_processor=None,
-        image_variant: str = "original",    # which image variant to use for reliability/both
     ):
         self.samples = samples
         self.task = task
@@ -54,16 +57,18 @@ class MMHealthDataset(Dataset):
         self.max_len = max_len
         self.tokenizer = tokenizer
         self.image_processor = image_processor
-        self.image_variant = image_variant
 
-        # build instance list
+        # build instances: (sample, variant_key)
         self.instances = []
         for s in samples:
-            if task in ("reliability", "both"):
-                self.instances.append((s, "original", s["label"]))
-            if task in ("originality", "both"):
-                for k in TEXT_KEYS:
-                    self.instances.append((s, k, 0 if k == "original" else 1))
+            if modality == "image":
+                keys = IMAGE_KEYS
+            elif modality == "both":
+                keys = TEXT_KEYS  # paired with aligned image key
+            else:
+                keys = TEXT_KEYS
+            for k in keys:
+                self.instances.append((s, k))
 
     def __len__(self):
         return len(self.instances)
@@ -74,15 +79,25 @@ class MMHealthDataset(Dataset):
             text = s["text"].get("original", "")
         return text
 
+    def _image_key(self, key):
+        """Map a variant key to the aligned image key."""
+        if key in IMAGE_KEYS:
+            return key
+        idx = TEXT_KEYS.index(key) if key in TEXT_KEYS else 0
+        return IMAGE_KEYS[min(idx, len(IMAGE_KEYS) - 1)]
+
     def _load_image_path(self, s, key):
-        paths = s["image"].get(key) or s["image"].get("original")
+        ikey = self._image_key(key)
+        paths = s["image"].get(ikey) or s["image"].get("original")
         if not paths:
             return None
         return os.path.join(self.image_root, paths[0])
 
     def __getitem__(self, i):
-        s, key, label = self.instances[i]
-        item = {"label": torch.tensor(label, dtype=torch.long)}
+        s, key = self.instances[i]
+        label_a = torch.tensor(s["label"], dtype=torch.long)          # reliability
+        label_b = torch.tensor(0 if key == "original" else 1, dtype=torch.long)  # originality
+        item = {"label_a": label_a, "label_b": label_b}
 
         if self.modality in ("text", "both"):
             enc = self.tokenizer(
@@ -96,8 +111,7 @@ class MMHealthDataset(Dataset):
             item["attention_mask"] = enc["attention_mask"].squeeze(0)
 
         if self.modality in ("image", "both"):
-            vkey = key if key in IMAGE_KEYS else self.image_variant
-            path = self._load_image_path(s, vkey)
+            path = self._load_image_path(s, key)
             if path and os.path.exists(path):
                 try:
                     img = Image.open(path).convert("RGB")
@@ -113,8 +127,5 @@ class MMHealthDataset(Dataset):
 def collate_fn(batch):
     out = {}
     for k in batch[0]:
-        if k == "label":
-            out[k] = torch.stack([b[k] for b in batch])
-        else:
-            out[k] = torch.stack([b[k] for b in batch])
+        out[k] = torch.stack([b[k] for b in batch])
     return out
