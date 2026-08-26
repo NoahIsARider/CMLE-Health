@@ -56,6 +56,7 @@ def parse_args():
     p.add_argument("--ckpt", default=None)
     p.add_argument("--limit", type=int, default=0, help="limit train samples (debug)")
     p.add_argument("--hf-mirror", action="store_true", help="use HF_ENDPOINT mirror")
+    p.add_argument("--features-dir", default=None, help="train from precomputed frozen features")
     return p.parse_args()
 
 
@@ -163,25 +164,72 @@ def main():
 
     use_text = args.modality in ("text", "both")
     use_image = args.modality in ("image", "both")
-    encoders = build_encoders(use_text, use_image, args.hf_mirror)
-    for k, v in encoders.items():
-        if hasattr(v, "to"):
-            v.to(device)
+
+    feature_max_len = None
+    if args.features_dir:
+        caches = {}
+        for split in ("train", "val", "test"):
+            caches[split] = torch.load(os.path.join(args.features_dir, f"{split}_{args.modality}.pt"),
+                                       map_location="cpu")
+        feature_max_len = caches["train"].get("max_len", 256)
+        use_text = args.modality in ("text", "both")
+        use_image = args.modality in ("image", "both")
+        encoders = {}
+    else:
+        encoders = build_encoders(use_text, use_image, args.hf_mirror)
+        for k, v in encoders.items():
+            if hasattr(v, "to"):
+                v.to(device)
 
     tokenizer = encoders.get("tokenizer")
     image_processor = encoders.get("image_processor")
-    make_ds = lambda samples: MMHealthDataset(
-        samples, task=args.task, modality=args.modality,
-        image_root=args.image_root, max_len=args.max_len,
-        tokenizer=tokenizer, image_processor=image_processor,
-    )
-    train_ds = make_ds(train_samples)
-    val_ds = make_ds(val_samples)
-    test_ds = make_ds(test_samples)
-    train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True, num_workers=4,
-                              collate_fn=collate_fn)
-    val_loader = DataLoader(val_ds, batch_size=args.batch, shuffle=False, num_workers=4, collate_fn=collate_fn)
-    test_loader = DataLoader(test_ds, batch_size=args.batch, shuffle=False, num_workers=4, collate_fn=collate_fn)
+
+    if args.features_dir:
+        class FeatDS(torch.utils.data.Dataset):
+            def __init__(self, c):
+                self.f = c["feats"]
+                self.a = c["label_a"]
+                self.b = c["label_b"]
+
+            def __len__(self):
+                return len(self.a)
+
+            def __getitem__(self, i):
+                return {"feats": self.f[i], "label_a": self.a[i], "label_b": self.b[i]}
+
+        def feat_collate(batch):
+            out = {"feats": torch.stack([b["feats"] for b in batch]),
+                   "label_a": torch.stack([b["label_a"] for b in batch]),
+                   "label_b": torch.stack([b["label_b"] for b in batch])}
+            return out
+
+        train_loader = DataLoader(FeatDS(caches["train"]), batch_size=args.batch, shuffle=True,
+                                  num_workers=2, collate_fn=feat_collate)
+        val_loader = DataLoader(FeatDS(caches["val"]), batch_size=args.batch, shuffle=False,
+                                num_workers=2, collate_fn=feat_collate)
+        test_loader = DataLoader(FeatDS(caches["test"]), batch_size=args.batch, shuffle=False,
+                                 num_workers=2, collate_fn=feat_collate)
+
+        def extract_features(batch, _encoders, _device, _modality):
+            f = batch["feats"].to(_device)
+            if args.modality == "both":
+                return f[:, : feature_max_len], f[:, feature_max_len:]
+            if args.modality == "image":
+                return None, f
+            return f, None
+    else:
+        make_ds = lambda samples: MMHealthDataset(
+            samples, task=args.task, modality=args.modality,
+            image_root=args.image_root, max_len=args.max_len,
+            tokenizer=tokenizer, image_processor=image_processor,
+        )
+        train_ds = make_ds(train_samples)
+        val_ds = make_ds(val_samples)
+        test_ds = make_ds(test_samples)
+        train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True, num_workers=4,
+                                  collate_fn=collate_fn)
+        val_loader = DataLoader(val_ds, batch_size=args.batch, shuffle=False, num_workers=4, collate_fn=collate_fn)
+        test_loader = DataLoader(test_ds, batch_size=args.batch, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
     num_a, num_b = 2, 2
     if args.variant in ("bert-only", "clip-only", "concat", "no-experts"):
