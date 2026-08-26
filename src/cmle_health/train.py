@@ -115,9 +115,10 @@ def evaluate(model, loader, encoders, device, modality, task, criterion, variant
     with torch.no_grad():
         for batch in loader:
             tf, imf = extract_features(batch, encoders, device, modality)
-            out = model(tf, imf)
             if isinstance(model, BaselineMLP):
                 out = baseline_forward(model, variant, tf, imf)
+            else:
+                out = model(tf, imf)
             la = batch["label_a"].to(device)
             lb = batch["label_b"].to(device)
             if isinstance(out, dict):
@@ -223,9 +224,10 @@ def main():
             tf, imf = extract_features(batch, encoders, device, args.modality)
             la = batch["label_a"].to(device)
             lb = batch["label_b"].to(device)
-            out = model(tf, imf)
             if isinstance(model, BaselineMLP):
                 out = baseline_forward(model, args.variant, tf, imf)
+            else:
+                out = model(tf, imf)
 
             if isinstance(out, dict):
                 logits_a, logits_b = out["logits_a"], out["logits_b"]
