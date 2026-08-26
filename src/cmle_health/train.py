@@ -108,7 +108,10 @@ def baseline_forward(model, variant, tf, imf):
     return model(x)
 
 
-def evaluate(model, loader, encoders, device, modality, task, criterion, variant=None):
+def evaluate(model, loader, encoders, device, modality, task, criterion, variant=None, feat_fn=None):
+    """feat_fn: optional feature extractor override (features-dir mode)."""
+    if feat_fn is None:
+        feat_fn = extract_features
     model.eval()
     res = {}
     losses = []
@@ -116,7 +119,7 @@ def evaluate(model, loader, encoders, device, modality, task, criterion, variant
     gts = {"a": [], "b": []}
     with torch.no_grad():
         for batch in loader:
-            tf, imf = extract_features(batch, encoders, device, modality)
+            tf, imf = feat_fn(batch, encoders, device, modality)
             if isinstance(model, BaselineMLP):
                 out = baseline_forward(model, variant, tf, imf)
             else:
@@ -266,7 +269,8 @@ def main():
     if args.eval_only:
         assert args.ckpt
         model.load_state_dict(torch.load(args.ckpt, map_location=device))
-        res = evaluate(model, test_loader, encoders, device, args.modality, args.task, criterion, args.variant)
+        res = evaluate(model, test_loader, encoders, device, args.modality, args.task, criterion, args.variant,
+                       feat_fn=(extract_features if args.features_dir else None))
         print("[test]", json.dumps(res))
         return
 
@@ -300,7 +304,8 @@ def main():
             optimizer.step()
             tot += loss.item()
 
-        val = evaluate(model, val_loader, encoders, device, args.modality, args.task, criterion, args.variant)
+        val = evaluate(model, val_loader, encoders, device, args.modality, args.task, criterion, args.variant,
+                       feat_fn=(extract_features if args.features_dir else None))
         key = "b_f1" if args.task == "originality" else ("a_f1" if args.task == "reliability" else "a_f1")
         if val[key] > best_val:
             best_val = val[key]
@@ -309,7 +314,8 @@ def main():
               f"({time.time() - t0:.0f}s)")
 
     model.load_state_dict(best_state)
-    test = evaluate(model, test_loader, encoders, device, args.modality, args.task, criterion, args.variant)
+    test = evaluate(model, test_loader, encoders, device, args.modality, args.task, criterion, args.variant,
+                    feat_fn=(extract_features if args.features_dir else None))
     print("[test]", json.dumps(test))
 
     ckpt = os.path.join(args.out, f"{args.tag}.pt")
