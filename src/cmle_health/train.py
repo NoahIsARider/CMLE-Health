@@ -217,7 +217,7 @@ def main():
                                  num_workers=2, collate_fn=feat_collate)
 
         def extract_features(batch, _encoders, _device, _modality):
-            f = batch["feats"].to(_device)
+            f = batch["feats"].float().to(_device)  # cache is fp16, model is fp32
             if args.modality == "both":
                 return f[:, : feature_max_len], f[:, feature_max_len:]
             if args.modality == "image":
