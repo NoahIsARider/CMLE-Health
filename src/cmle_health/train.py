@@ -40,7 +40,8 @@ def parse_args():
     p.add_argument("--task", default="both", choices=["reliability", "originality", "both"])
     p.add_argument("--modality", default="both", choices=["text", "image", "both"])
     p.add_argument("--variant", default="full",
-                   choices=["full", "w-o-universal", "w-o-specialized", "w-o-dgm", "w-o-mim",
+                   choices=["full", "w-o-universal", "w-o-specialized", "w-o-consistency",
+                            "w-o-dgm", "w-o-mim", "only-text-expert", "only-image-expert",
                             "no-experts", "bert-only", "clip-only", "concat"])
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--batch", type=int, default=32)
@@ -146,6 +147,11 @@ def evaluate(model, loader, encoders, device, modality, task, criterion, variant
 
 def main():
     args = parse_args()
+    # single-expert ablations force their modality early (before encoder/cache setup)
+    if args.variant == "only-text-expert":
+        args.modality = "text"
+    elif args.variant == "only-image-expert":
+        args.modality = "image"
     set_seed()
     os.makedirs(args.out, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -239,15 +245,16 @@ def main():
             in_dim = 768
         model = BaselineMLP(in_dim, num_b if args.task == "originality" else num_a)
     else:
+        v = args.variant
         model = CMLEHealth(
             text_dim=768, image_dim=768, proj_dim=args.proj_dim,
             lora_rank=args.lora_rank,
             num_classes_a=num_a, num_classes_b=num_b,
-            use_consistency=not args.no_consistency,
-            use_universal=args.variant != "w-o-universal",
-            use_specialized=args.variant != "w-o-specialized",
-            use_dgm=args.variant != "w-o-dgm",
-            use_mim=args.variant != "w-o-mim",
+            use_consistency=(v != "w-o-consistency") and not args.no_consistency,
+            use_universal=v != "w-o-universal",
+            use_specialized=v != "w-o-specialized",
+            use_dgm=v != "w-o-dgm",
+            use_mim=v != "w-o-mim",
         )
     model.to(device)
     n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
