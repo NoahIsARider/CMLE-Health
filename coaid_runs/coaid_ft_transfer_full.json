@@ -1,0 +1,33 @@
+{
+  "args": {
+    "data": "/root/mm-health-data/train_test_splited_data.json",
+    "image_root": "/root/mm-health-data",
+    "task": "reliability",
+    "modality": "text",
+    "variant": "full",
+    "epochs": 10,
+    "batch": 64,
+    "lr": 5e-05,
+    "lambda_mim": 1.0,
+    "lora_rank": 8,
+    "proj_dim": 512,
+    "max_len": 384,
+    "no_consistency": false,
+    "out": "/root/coaid_runs",
+    "tag": "coaid_ft_transfer_full",
+    "eval_only": false,
+    "ckpt": "/root/cmle-health/runs/t_full_rel.pt",
+    "limit": 0,
+    "hf_mirror": false,
+    "features_dir": "/root/coaid_features"
+  },
+  "val_best": 0.46,
+  "test": {
+    "loss": 0.49185228057023955,
+    "a_acc": 0.8495370370370371,
+    "a_f1": 0.4593241551939925,
+    "a_p": 0.5,
+    "a_r": 0.42476851851851855
+  },
+  "trainable_params": 824328
+}

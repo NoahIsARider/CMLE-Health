@@ -1,0 +1,33 @@
+{
+  "args": {
+    "data": "/root/mm-health-data/train_test_splited_data.json",
+    "image_root": "/root/mm-health-data",
+    "task": "reliability",
+    "modality": "text",
+    "variant": "bert-only",
+    "epochs": 10,
+    "batch": 64,
+    "lr": 5e-05,
+    "lambda_mim": 1.0,
+    "lora_rank": 8,
+    "proj_dim": 512,
+    "max_len": 384,
+    "no_consistency": false,
+    "out": "/root/coaid_runs",
+    "tag": "coaid_ft_transfer_bert",
+    "eval_only": false,
+    "ckpt": "/root/cmle-health/runs/t_bert_rel.pt",
+    "limit": 0,
+    "hf_mirror": false,
+    "features_dir": "/root/coaid_features"
+  },
+  "val_best": 0.42857142857142855,
+  "test": {
+    "loss": 0.610883578294661,
+    "a_acc": 0.7546296296296297,
+    "a_f1": 0.43007915567282323,
+    "a_p": 0.5,
+    "a_r": 0.3773148148148148
+  },
+  "trainable_params": 197378
+}
