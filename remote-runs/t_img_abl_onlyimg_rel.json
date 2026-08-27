@@ -1,0 +1,33 @@
+{
+  "args": {
+    "data": "/root/mm-health-data/train_test_splited_data.json",
+    "image_root": "/root/mm-health-data",
+    "task": "reliability",
+    "modality": "image",
+    "variant": "only-image-expert",
+    "epochs": 10,
+    "batch": 64,
+    "lr": 0.0001,
+    "lambda_mim": 1.0,
+    "lora_rank": 8,
+    "proj_dim": 512,
+    "max_len": 384,
+    "no_consistency": false,
+    "out": "/root/cmle-health/runs",
+    "tag": "t_img_abl_onlyimg_rel",
+    "eval_only": false,
+    "ckpt": null,
+    "limit": 0,
+    "hf_mirror": false,
+    "features_dir": "/root/cmle-health/features"
+  },
+  "val_best": 0.701237970811293,
+  "test": {
+    "loss": 0.42401311170617373,
+    "a_acc": 0.817371297095197,
+    "a_f1": 0.7202054002925817,
+    "a_p": 0.7132886858790474,
+    "a_r": 0.7284371789781501
+  },
+  "trainable_params": 824328
+}
