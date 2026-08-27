@@ -20,10 +20,7 @@ sub-project returns to that intent, grounded in organization theory:
   processing theory.** Organizations handle uncertainty by increasing
   information-processing capacity: specialization (roles), lateral relations
   (coordination between roles), and hierarchy (escalation/referral).
-- **Joseph et al., "Information processing, mutual understanding, and
-  organization design in healthcare"** — mutual understanding (MU) among
-  professional roles is the mechanism that makes HRO-style healthcare teams
-  reliable under uncertainty.
+- **Joseph, Wilson, Park & Chow (2026), *"Information processing, mutual understanding, and organization design in healthcare"*, Strategic Management Journal (Early View, online Aug 20, 2026; DOI: 10.1002/smj.70116)** — mutual understanding (MU) among professional roles is the mechanism that makes HRO-style healthcare teams reliable under uncertainty. This paper is the **direct inspiration** for CMLE-Consult: it provides the theoretical account of how healthcare organizations process information and build mutual understanding, which we operationalize here as role experts, a consensus (MU) loss, and HRO referral.
 - **CMLE lineage** — LoRA role experts + dynamic gating mechanism (DGM) +
   cross-modal InfoNCE, previously validated for health misinformation
   (0.9044 both-task accuracy on MM-Health).
@@ -225,9 +222,30 @@ w-o-dgm,w-o-mu,w-o-univ,w-o-spec}` · `--lambda-mu` · `--lambda-mim` ·
 - [ ] VLM zero-shot baseline (DeepSeek-VL / Qwen2-VL via API)
 - [ ] Paper draft (TCE / JBHI)
 
-## 8. Citation
+## 8. References & Inspiration
+
+The design of CMLE-Consult is grounded in organization theory. Its **direct
+inspiration** is the information-processing / mutual-understanding account of
+healthcare organizations by Joseph and colleagues (SMJ, 2026) — operationalized
+here as role experts, dynamic gating, consensus (MU) loss, and HRO referral.
 
 ```bibtex
+@article{joseph2026information,
+  title={Information processing, mutual understanding, and organization design in healthcare},
+  author={Joseph, John and Wilson, Alexander J. and Park, Jihae and Chow, Danny},
+  journal={Strategic Management Journal},
+  note={Early View, online August 20, 2026},
+  year={2026},
+  doi={10.1002/smj.70116}
+}
+
+@book{galbraith1973designing,
+  title={Designing Complex Organizations},
+  author={Galbraith, Jay R.},
+  year={1973},
+  publisher={Addison-Wesley}
+}
+
 @article{cmle2026,
   title={CMLE: ...},
   author={Zhou, Fang-Yanuo and others},
@@ -235,8 +253,11 @@ w-o-dgm,w-o-mu,w-o-univ,w-o-spec}` · `--lambda-mu` · `--lambda-mim` ·
   year={2026},
   doi={10.1109/TCE.2026.3677445}
 }
-```
 
-PMC-VQA: `@inproceedings{zhang2024pmcvqa, title={PMC-VQA: Visual Instruction
-Tuning for Medical Visual Question Answering}, author={Zhang, Xiaoman and
-others}, booktitle={ICLR}, year={2024}}`
+@inproceedings{zhang2024pmcvqa,
+  title={PMC-VQA: Visual Instruction Tuning for Medical Visual Question Answering},
+  author={Zhang, Xiaoman and others},
+  booktitle={ICLR},
+  year={2024}
+}
+```
