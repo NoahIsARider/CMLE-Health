@@ -178,9 +178,16 @@ def main():
     if args.features_dir:
         caches = {}
         for split in ("train", "val", "test"):
-            caches[split] = torch.load(os.path.join(args.features_dir, f"{split}_{args.modality}.pt"),
-                                       map_location="cpu")
-        feature_max_len = caches["train"].get("max_len", 256)
+            if args.modality == "both":
+                caches[split] = (
+                    torch.load(os.path.join(args.features_dir, f"{split}_text.pt"), map_location="cpu"),
+                    torch.load(os.path.join(args.features_dir, f"{split}_image.pt"), map_location="cpu"),
+                )
+            else:
+                caches[split] = torch.load(os.path.join(args.features_dir, f"{split}_{args.modality}.pt"),
+                                           map_location="cpu")
+        feature_max_len = (caches["train"][0].get("max_len", 256)
+                           if args.modality == "both" else caches["train"].get("max_len", 256))
         use_text = args.modality in ("text", "both")
         use_image = args.modality in ("image", "both")
         encoders = {}
@@ -196,20 +203,32 @@ def main():
     if args.features_dir:
         class FeatDS(torch.utils.data.Dataset):
             def __init__(self, c):
-                self.f = c["feats"]
-                self.a = c["label_a"]
-                self.b = c["label_b"]
+                if isinstance(c, tuple):  # both: (text_cache, image_cache)
+                    self.tf = c[0]["feats"]
+                    self.if_ = c[1]["feats"]
+                    self.a = c[0]["label_a"]
+                    self.b = c[0]["label_b"]
+                else:
+                    self.tf = c["feats"]
+                    self.if_ = None
+                    self.a = c["label_a"]
+                    self.b = c["label_b"]
 
             def __len__(self):
                 return len(self.a)
 
             def __getitem__(self, i):
-                return {"feats": self.f[i], "label_a": self.a[i], "label_b": self.b[i]}
+                item = {"tf": self.tf[i], "label_a": self.a[i], "label_b": self.b[i]}
+                if self.if_ is not None:
+                    item["imf"] = self.if_[i]
+                return item
 
         def feat_collate(batch):
-            out = {"feats": torch.stack([b["feats"] for b in batch]),
+            out = {"tf": torch.stack([b["tf"] for b in batch]),
                    "label_a": torch.stack([b["label_a"] for b in batch]),
                    "label_b": torch.stack([b["label_b"] for b in batch])}
+            if "imf" in batch[0]:
+                out["imf"] = torch.stack([b["imf"] for b in batch])
             return out
 
         train_loader = DataLoader(FeatDS(caches["train"]), batch_size=args.batch, shuffle=True,
@@ -220,12 +239,13 @@ def main():
                                  num_workers=2, collate_fn=feat_collate)
 
         def extract_features(batch, _encoders, _device, _modality):
-            f = batch["feats"].float().to(_device)  # cache is fp16, model is fp32
-            if args.modality == "both":
-                return f[:, : feature_max_len], f[:, feature_max_len:]
-            if args.modality == "image":
-                return None, f
-            return f, None
+            tf = batch.get("tf")
+            imf = batch.get("imf")
+            if tf is not None:
+                tf = tf.float().to(_device)  # cache is fp16, model is fp32
+            if imf is not None:
+                imf = imf.float().to(_device)
+            return tf, imf
     else:
         make_ds = lambda samples: MMHealthDataset(
             samples, task=args.task, modality=args.modality,

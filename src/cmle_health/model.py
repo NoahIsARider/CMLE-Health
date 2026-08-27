@@ -108,27 +108,29 @@ class CMLEHealth(nn.Module):
     def forward(self, text_feats, image_feats):
         """text_feats: (B, L_t, text_dim) frozen BERT token features
            image_feats: (B, L_i, image_dim) frozen CLIP patch features (or None)"""
-        ft = self._project(text_feats, self.text_proj)          # (B, L_t, D)
+        ft = self._project(text_feats, self.text_proj) if text_feats is not None else None
         if image_feats is not None:
             fi = self._project(image_feats, self.image_proj)    # (B, L_i, D)
         else:
             fi = None
 
         # expert outputs
-        e_t = self.text_lora(ft)
+        e_t = self.text_lora(ft) if ft is not None else None
         if fi is not None:
             e_i = self.image_lora(fi)
         else:
             e_i = None
 
         if self.use_universal:
-            feats_all = torch.cat([ft, fi], dim=1) if fi is not None else ft
+            feats_all = torch.cat([ft, fi], dim=1) if (ft is not None and fi is not None) \
+                else (ft if ft is not None else fi)
             u = self.universal_lora(feats_all)
         else:
             u = None
 
         if self.use_specialized and self.use_consistency:
-            feats_all = torch.cat([ft, fi], dim=1) if fi is not None else ft
+            feats_all = torch.cat([ft, fi], dim=1) if (ft is not None and fi is not None) \
+                else (ft if ft is not None else fi)
             e_c = self.consistency_lora(feats_all)
         else:
             e_c = None
@@ -152,7 +154,7 @@ class CMLEHealth(nn.Module):
 
         # all active experts share the same token layout when combined over [text;image]
         # (u / e_c cover all tokens; e_t covers text tokens; e_i covers image tokens)
-        if fi is not None:
+        if fi is not None and ft is not None:
             # align to full token grid: text part + image part
             def pad_to_full(part, full_len):
                 Lp = part.size(1)
@@ -186,6 +188,20 @@ class CMLEHealth(nn.Module):
             else:
                 g_act = torch.full_like(expert_stack[..., 0], 1.0 / len(labels))   # equal weights
             h = (expert_stack * g_act.unsqueeze(-1)).sum(dim=-2)  # (B, L, D)
+        elif fi is not None:
+            # image only: experts = U (over image), I, C (over image)
+            stack = []
+            for lab, e in zip(labels, active):
+                stack.append(e)
+            expert_stack = torch.stack(stack, dim=-2)
+            if self.use_dgm:
+                g_logits = self.gate(fi)
+                g = F.softmax(g_logits, dim=-1)
+                slot = {"U": 0, "T": 1, "I": 2, "C": 3}
+                g_act = torch.stack([g[:, :, slot[lab]] for lab in labels], dim=-1)
+            else:
+                g_act = torch.full_like(expert_stack[..., 0], 1.0 / len(labels))
+            h = (expert_stack * g_act.unsqueeze(-1)).sum(dim=-2)
         else:
             # text only: experts = U (over text), T, C (over text)
             stack = []
@@ -215,7 +231,8 @@ class CMLEHealth(nn.Module):
         if u is not None:
             reps["U"] = u.mean(dim=1)
         if self.use_specialized:
-            reps["T"] = e_t.mean(dim=1)
+            if e_t is not None:
+                reps["T"] = e_t.mean(dim=1)
             if e_i is not None:
                 reps["I"] = e_i.mean(dim=1)
             if e_c is not None:
