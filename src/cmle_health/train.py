@@ -60,6 +60,7 @@ def parse_args():
     p.add_argument("--features-dir", default=None, help="train from precomputed frozen features")
     p.add_argument("--finetune-backbone", action="store_true",
                    help="fine-tune the text backbone (BERT) end-to-end (online mode only)")
+    p.add_argument("--seed", type=int, default=SEED, help="random seed (default 42)")
     return p.parse_args()
 
 
@@ -162,10 +163,10 @@ def main():
         args.modality = "text"
     elif args.variant == "only-image-expert":
         args.modality = "image"
-    set_seed()
+    set_seed(args.seed)
     os.makedirs(args.out, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[env] device={device} variant={args.variant} task={args.task} modality={args.modality}")
+    print(f"[env] device={device} seed={args.seed} variant={args.variant} task={args.task} modality={args.modality}")
 
     if args.variant in ("bert-only", "clip-only", "concat") and args.task == "both":
         raise SystemExit("baseline variants support single task only (reliability | originality)")
