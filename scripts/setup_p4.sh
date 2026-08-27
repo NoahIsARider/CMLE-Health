@@ -72,10 +72,19 @@ sympy==1.13.1
 "
 fetch_one() {
   local spec="$1"; local name="${spec%%==*}"; local ver="${spec##*==}"
-  local href=$(curl -s --max-time 25 "https://mirrors.aliyun.com/pypi/simple/${name}/" \
-    | grep -oE 'href="[^"]*'"${name//-/_}"'-'"${ver}"'[^"]*\.whl[^"]*"' \
-    | grep -v aarch64 | grep -v arm64 | grep -E "x86_64|manylinux" | head -1 \
-    | sed 's/href="//;s/"$//;s/#sha256=.*//')
+  local href
+  if [ "$name" = "triton" ]; then
+    # triton: aliyun index lists cp310 BEFORE cp312 — force cp312 explicitly
+    href=$(curl -s --max-time 25 "https://mirrors.aliyun.com/pypi/simple/${name}/" \
+      | grep -oE 'href="[^"]*'"${name//-/_}"'-'"${ver}"'[^"]*cp312[^"]*\.whl[^"]*"' \
+      | grep -v aarch64 | grep -v arm64 | grep -E "x86_64|manylinux" | head -1 \
+      | sed 's/href="//;s/"$//;s/#sha256=.*//')
+  else
+    href=$(curl -s --max-time 25 "https://mirrors.aliyun.com/pypi/simple/${name}/" \
+      | grep -oE 'href="[^"]*'"${name//-/_}"'-'"${ver}"'[^"]*\.whl[^"]*"' \
+      | grep -v aarch64 | grep -v arm64 | grep -E "x86_64|manylinux" | head -1 \
+      | sed 's/href="//;s/"$//;s/#sha256=.*//')
+  fi
   if [ -z "$href" ]; then echo "MISS $name $ver"; return 1; fi
   case "$href" in http*) full="$href" ;; *) full="https://mirrors.aliyun.com/pypi/simple/${name}/${href}" ;; esac
   cd /root/wheels/deps && curl -sL --max-time 900 -o "$(basename "$href")" "$full" && echo "GOT $(basename "$href")"
