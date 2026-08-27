@@ -58,6 +58,8 @@ def parse_args():
     p.add_argument("--limit", type=int, default=0, help="limit train samples (debug)")
     p.add_argument("--hf-mirror", action="store_true", help="use HF_ENDPOINT mirror")
     p.add_argument("--features-dir", default=None, help="train from precomputed frozen features")
+    p.add_argument("--finetune-backbone", action="store_true",
+                   help="fine-tune the text backbone (BERT) end-to-end (online mode only)")
     return p.parse_args()
 
 
@@ -76,17 +78,22 @@ def build_encoders(use_text=True, use_image=True, hf_mirror=False):
     return encoders
 
 
-@torch.no_grad()
-def extract_features(batch, encoders, device, modality):
+def extract_features_online(batch, encoders, device, modality, grad=False):
+    """Extract frozen-backbone features; grad=True allows backbone fine-tuning."""
     if modality in ("text", "both"):
         ids = batch["input_ids"].to(device)
         mask = batch["attention_mask"].to(device)
-        text_feats = encoders["text_model"](input_ids=ids, attention_mask=mask).last_hidden_state
+        if grad:
+            text_feats = encoders["text_model"](input_ids=ids, attention_mask=mask).last_hidden_state
+        else:
+            with torch.no_grad():
+                text_feats = encoders["text_model"](input_ids=ids, attention_mask=mask).last_hidden_state
     else:
         text_feats = None
     if modality in ("image", "both"):
         px = batch["pixel_values"].to(device)
-        img_feats = encoders["image_model"](pixel_values=px).last_hidden_state
+        with torch.no_grad():
+            img_feats = encoders["image_model"](pixel_values=px).last_hidden_state
     else:
         img_feats = None
     return text_feats, img_feats
@@ -111,7 +118,7 @@ def baseline_forward(model, variant, tf, imf):
 def evaluate(model, loader, encoders, device, modality, task, criterion, variant=None, feat_fn=None):
     """feat_fn: optional feature extractor override (features-dir mode)."""
     if feat_fn is None:
-        feat_fn = extract_features
+        feat_fn = extract_features_online
     model.eval()
     res = {}
     losses = []
@@ -177,7 +184,9 @@ def main():
     feature_max_len = None
     if args.features_dir:
         caches = {}
-        for split in ("train", "val", "test"):
+        # eval-only: only need test split (used for cross-domain evaluation on external data)
+        split_names = ("test",) if args.eval_only else ("train", "val", "test")
+        for split in split_names:
             if args.modality == "both":
                 caches[split] = (
                     torch.load(os.path.join(args.features_dir, f"{split}_text.pt"), map_location="cpu"),
@@ -187,7 +196,8 @@ def main():
                 caches[split] = torch.load(os.path.join(args.features_dir, f"{split}_{args.modality}.pt"),
                                            map_location="cpu")
         feature_max_len = (caches["train"][0].get("max_len", 256)
-                           if args.modality == "both" else caches["train"].get("max_len", 256))
+                           if (args.modality == "both" and not args.eval_only)
+                           else caches["test"].get("max_len", 256))
         use_text = args.modality in ("text", "both")
         use_image = args.modality in ("image", "both")
         encoders = {}
@@ -231,14 +241,17 @@ def main():
                 out["imf"] = torch.stack([b["imf"] for b in batch])
             return out
 
-        train_loader = DataLoader(FeatDS(caches["train"]), batch_size=args.batch, shuffle=True,
-                                  num_workers=2, collate_fn=feat_collate)
-        val_loader = DataLoader(FeatDS(caches["val"]), batch_size=args.batch, shuffle=False,
-                                num_workers=2, collate_fn=feat_collate)
+        train_loader = None
+        val_loader = None
+        if not args.eval_only:
+            train_loader = DataLoader(FeatDS(caches["train"]), batch_size=args.batch, shuffle=True,
+                                      num_workers=2, collate_fn=feat_collate)
+            val_loader = DataLoader(FeatDS(caches["val"]), batch_size=args.batch, shuffle=False,
+                                    num_workers=2, collate_fn=feat_collate)
         test_loader = DataLoader(FeatDS(caches["test"]), batch_size=args.batch, shuffle=False,
                                  num_workers=2, collate_fn=feat_collate)
 
-        def extract_features(batch, _encoders, _device, _modality):
+        def cached_extract(batch, _encoders, _device, _modality, grad=False):
             tf = batch.get("tf")
             imf = batch.get("imf")
             if tf is not None:
@@ -246,7 +259,9 @@ def main():
             if imf is not None:
                 imf = imf.float().to(_device)
             return tf, imf
+        extract_features = cached_extract
     else:
+        extract_features = extract_features_online
         make_ds = lambda samples: MMHealthDataset(
             samples, task=args.task, modality=args.modality,
             image_root=args.image_root, max_len=args.max_len,
@@ -284,23 +299,33 @@ def main():
     print(f"[model] {type(model).__name__} trainable params: {n_train:,}")
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    params = list(model.parameters())
+    if args.finetune_backbone and encoders.get("text_model") is not None:
+        encoders["text_model"].train()
+        for p in encoders["text_model"].parameters():
+            p.requires_grad = True
+        params.extend(encoders["text_model"].parameters())
+        print("[ft] fine-tuning BERT backbone end-to-end")
+    optimizer = torch.optim.Adam(params, lr=args.lr)
+
+    if args.ckpt:
+        model.load_state_dict(torch.load(args.ckpt, map_location=device))
+        if args.eval_only:
+            print(f"[ckpt] loaded {args.ckpt}")
 
     if args.eval_only:
-        assert args.ckpt
-        model.load_state_dict(torch.load(args.ckpt, map_location=device))
         res = evaluate(model, test_loader, encoders, device, args.modality, args.task, criterion, args.variant,
                        feat_fn=(extract_features if args.features_dir else None))
         print("[test]", json.dumps(res))
         return
-
     best_val, best_state = -1, None
     for epoch in range(1, args.epochs + 1):
         model.train()
         t0 = time.time()
         tot = 0.0
         for batch in train_loader:
-            tf, imf = extract_features(batch, encoders, device, args.modality)
+            tf, imf = extract_features(batch, encoders, device, args.modality,
+                                       grad=args.finetune_backbone)
             la = batch["label_a"].to(device)
             lb = batch["label_b"].to(device)
             if isinstance(model, BaselineMLP):
