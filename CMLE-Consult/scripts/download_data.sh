@@ -1,10 +1,14 @@
 #!/bin/bash
-# ============================================================
-# Download PMC-VQA data (chunked resume, no extraction!)
-#   images.zip (19G) + images_2.zip (2.2G) stay as zips;
-#   precompute reads images directly from zip (disk: 29G only).
-# ============================================================
+# Download PMC-VQA data (chunked resume).
+# NOTE: images_2.zip is NOT needed — train.csv + test_clean.csv figures are
+# 100% covered by images.zip (verified 2026-08-27: 115,821 + 1,440 images).
 cd /root/cmle-consult/data || { mkdir -p /root/cmle-consult/data && cd /root/cmle-consult/data; }
+
+echo "=== CSVs first (tiny) ==="
+for c in train.csv test.csv test_clean.csv; do
+  curl -sL --max-time 180 -o "$c" "https://hf-mirror.com/datasets/xmcmic/PMC-VQA/resolve/main/$c"
+  echo "$c: $(stat -c %s "$c") bytes"
+done
 
 dl_loop() {
   local f="$1"; local url="$2"; local expected="$3"
@@ -18,13 +22,8 @@ dl_loop() {
   done
 }
 
-dl_loop images.zip    "https://hf-mirror.com/datasets/xmcmic/PMC-VQA/resolve/main/images.zip"    19800000000
-dl_loop images_2.zip  "https://hf-mirror.com/datasets/xmcmic/PMC-VQA/resolve/main/images_2.zip"  2300000000
+# exact Content-Length from hf-mirror (verified 2026-08-27): 18,945,102,275 bytes
+dl_loop images.zip "https://hf-mirror.com/datasets/xmcmic/PMC-VQA/resolve/main/images.zip" 18945102275
 
-echo "=== zips done $(date +%H:%M:%S), fetching CSVs ==="
-for c in train.csv test.csv test_clean.csv train_2.csv; do
-  curl -sL --max-time 180 -o "$c" "https://hf-mirror.com/datasets/xmcmic/PMC-VQA/resolve/main/$c"
-  echo "$c: $(stat -c %s "$c" 2>/dev/null) bytes"
-done
 ls -lh
 echo CONSULT_DATA_DONE
