@@ -103,4 +103,12 @@ Load balancing kills the mode collapse: gate entropy 0.40 → 1.27 (near-uniform
 slight v edge); every expert gets real weight; fused acc 0.3655 > best expert solo
 (v 0.3275) — gating now adds value. Experts solo: t=0.297, v=0.328, a=0.287, u=0.303
 (v remains strongest, as expected — image dominates PMC-VQA).
-Extended run (30 epochs, lb 0.1/0.3) launched.
+
+### Balance 30-epoch (lr 3e-4, noaux) — 2026-08-28 12:25
+| run | lb | test acc | acc@70% | val_best |
+|-----|----|----------|---------|----------|
+| b30_full_lb01 | 0.1 | 0.3655 | 0.3850 | 0.3477 |
+| b30_full_lb03 | 0.3 | 0.3620 | 0.3871 | 0.3486 |
+
+30ep ≈ 15ep (0.3655 both): saturates ~epoch 15. lb=0.1 is the main config
+(30ep for the paper table). Final matrix v2 (main + ablations) launched 13:31.
