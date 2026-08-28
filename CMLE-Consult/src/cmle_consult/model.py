@@ -119,6 +119,22 @@ class ConsultNet(nn.Module):
 
     # ------------------------------------------------------------------
     @staticmethod
+    def load_balance_loss(gate_w: torch.Tensor) -> torch.Tensor:
+        """Switch-Transformer style aux loss: penalize expert usage imbalance.
+
+        gate_w: (B, n_experts) softmax gate weights. Encourages uniform routing
+        so role experts actually specialize instead of collapsing to one.
+        """
+        n = gate_w.size(1)
+        B = gate_w.size(0)
+        f = torch.zeros(n, device=gate_w.device)
+        idx = gate_w.argmax(-1)
+        if B > 0:
+            f = idx.bincount(minlength=n).float() / B          # hard-assignment fraction
+        P = gate_w.mean(0)                                     # avg gate probability
+        return n * (f * P).sum()
+
+    @staticmethod
     def agreement_score(probs: torch.Tensor) -> torch.Tensor:
         """Mutual-understanding agreement: 1 - mean pairwise KL (exponentiated)."""
         n = probs.size(1)

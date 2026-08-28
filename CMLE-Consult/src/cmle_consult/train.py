@@ -125,6 +125,8 @@ def compute_loss(model, args, batch, device):
         loss = loss + args.lambda_mu * model.consensus_loss(out["expert_probs"])
     if args.lambda_mim > 0:
         loss = loss + args.lambda_mim * model.infonce_loss(out["rep_q"], out["rep_img"])
+    if getattr(args, "lambda_balance", 0.0) > 0:
+        loss = loss + args.lambda_balance * model.load_balance_loss(out["gate_w"])
     return loss, out["logits"], label
 
 
@@ -179,6 +181,7 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--lambda-mu", type=float, default=0.1)
     ap.add_argument("--lambda-mim", type=float, default=0.1)
+    ap.add_argument("--lambda-balance", type=float, default=0.0, help="gate load-balancing loss weight (Switch-style)")
     ap.add_argument("--val-frac", type=float, default=0.1, help="hold-out from train for model selection")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--out", default="/root/cmle-consult/runs")
