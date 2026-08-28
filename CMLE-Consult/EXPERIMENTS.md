@@ -91,3 +91,16 @@ Key findings:
 - MedVInT-TE SOTA: 37.6% (our earlier note) — Frontiers 2026 review lists 40.2%;
   both > our best 36.7% acc, but HRO referral acc@70%cov reaches 0.4007 (w-o-univ/spec)
   and 0.3893 (clip-only).
+
+### Load-balancing loss probe (15 epochs, lr 3e-4, noaux) — 2026-08-28 11:30
+| run | lambda-balance | test acc | val_best | gate_w | gate entropy | agreement |
+|-----|----------------|----------|----------|--------|--------------|-----------|
+| d_full_noaux_lr3e4 (ref) | 0 | 0.3645 | 0.3425 | [0.17, 0.83, 0.00, 0.00] | 0.40 | 0.48 |
+| b_full_lb002 | 0.02 | 0.3625 | 0.3438 | [0.24, 0.31, 0.21, 0.23] | 1.21 | 0.86 |
+| b_full_lb01 | 0.1 | **0.3655** | 0.3445 | [0.25, 0.28, 0.23, 0.24] | 1.27 | 0.85 |
+
+Load balancing kills the mode collapse: gate entropy 0.40 → 1.27 (near-uniform with
+slight v edge); every expert gets real weight; fused acc 0.3655 > best expert solo
+(v 0.3275) — gating now adds value. Experts solo: t=0.297, v=0.328, a=0.287, u=0.303
+(v remains strongest, as expected — image dominates PMC-VQA).
+Extended run (30 epochs, lb 0.1/0.3) launched.
