@@ -130,3 +130,17 @@ DGM now +0.4pp vs equal weights). But full+lb (0.3655) still ≤ clip-only (0.36
 and < MedVInT-TE SOTA (37.6-40.2) → **not submission-ready yet**; see REPORT.md
 §6-7 for known issues + prioritized next steps (PMC-CLIP backbone, expert input
 differentiation, two-stage training, 3-seed variance).
+
+### PubMedCLIP backbone test (30ep, lr 3e-4, pair features) — 2026-08-28 16:50
+| variant | test acc | acc@90% | acc@70% | val_best |
+|---------|----------|---------|---------|----------|
+| clip-only (PubMedCLIP) | 0.3655 | 0.3728 | 0.3929 | 0.3524 |
+| concat (PubMedCLIP) | 0.3590 | 0.3644 | 0.3829 | 0.3503 |
+| full+lb (PubMedCLIP) | 0.3565 | 0.3617 | 0.3943 | 0.3496 |
+
+vs generic CLIP: clip-only 0.3670 / concat 0.3610 / full+lb 0.3655. **Medical CLIP
+(PubMedCLIP, ROCO radiology-tuned) does NOT help — slightly worse on all three.**
+Conclusion: feature backbone is NOT the bottleneck; the discriminative head's acc
+ceiling on PMC-VQA closed-set is ~36.7%. Main model still ≤ clip-only under both
+backbones. HRO referral acc@70%cov remains the strongest differentiator (0.3929-0.3943).
+Project archived at this state (Noah decision, 2026-08-28 16:50).
