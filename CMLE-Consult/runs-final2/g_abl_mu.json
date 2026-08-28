@@ -1,0 +1,35 @@
+{
+  "args": {
+    "features_dir": "/root/cmle-consult/features",
+    "train": "train_pair.pt",
+    "test": "test_clean_pair.pt",
+    "pair": true,
+    "variant": "full",
+    "epochs": 30,
+    "batch": 256,
+    "lr": 0.0003,
+    "lambda_mu": 0.1,
+    "lambda_mim": 0.0,
+    "lambda_balance": 0.1,
+    "val_frac": 0.1,
+    "seed": 42,
+    "out": "/root/cmle-consult/runs-final2",
+    "tag": "g_abl_mu",
+    "eval_only": false,
+    "ckpt": null,
+    "limit": 0
+  },
+  "val_best": 0.3531,
+  "test": {
+    "acc": 0.3655,
+    "mean_entropy": 1.2930700778961182,
+    "mean_agreement": 0.9476595520973206,
+    "acc@100%cov": 0.3655,
+    "acc@95%cov": 0.3679,
+    "acc@90%cov": 0.3678,
+    "acc@80%cov": 0.3781,
+    "acc@70%cov": 0.3871
+  },
+  "trainable_params": 2460488,
+  "variant": "full"
+}

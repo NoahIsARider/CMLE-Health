@@ -112,3 +112,21 @@ slight v edge); every expert gets real weight; fused acc 0.3655 > best expert so
 
 30ep ≈ 15ep (0.3655 both): saturates ~epoch 15. lb=0.1 is the main config
 (30ep for the paper table). Final matrix v2 (main + ablations) launched 13:31.
+
+### FINAL matrix v2 (30ep, lr 3e-4, noaux, full+lb0.1 main) — 2026-08-28 14:30 done
+| variant | test acc | acc@90% | acc@70% | val_best |
+|---------|----------|---------|---------|----------|
+| bert-only | 0.3110 | 0.3167 | 0.3236 | 0.3298 |
+| clip-only | **0.3670** | 0.3733 | 0.3893 | 0.3483 |
+| concat | 0.3610 | 0.3683 | 0.3836 | 0.3443 |
+| **full + lb0.1** | 0.3655 | 0.3683 | 0.3850 | 0.3477 |
+| full + lb0.1 + MU | 0.3655 | 0.3678 | 0.3871 | **0.3531** |
+| w-o-dgm (lb) | 0.3615 | 0.3633 | 0.3843 | 0.3496 |
+| w-o-univ (lb) | 0.3605 | 0.3678 | 0.3929 | 0.3473 |
+| w-o-spec (lb) | 0.3605 | 0.3678 | 0.3929 | 0.3473 |
+
+Final verdict (handover): gate mode collapse FIXED (lb loss; entropy 0.40→1.27,
+DGM now +0.4pp vs equal weights). But full+lb (0.3655) still ≤ clip-only (0.3670)
+and < MedVInT-TE SOTA (37.6-40.2) → **not submission-ready yet**; see REPORT.md
+§6-7 for known issues + prioritized next steps (PMC-CLIP backbone, expert input
+differentiation, two-stage training, 3-seed variance).

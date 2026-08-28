@@ -29,3 +29,5 @@ echo "############ GATE ANALYSIS ############"
 PYTHONPATH=/root/CMLE-Health/CMLE-Consult/src python3 -u scripts/analyze_gate.py --ckpt $O/g_full.pt 2>&1 | grep -E "fused acc|expert\[|mean gate|mean agreement"
 
 echo "=== FINAL MATRIX V2 DONE ==="
+
+echo "=== FINAL MATRIX V2 DONE ==="

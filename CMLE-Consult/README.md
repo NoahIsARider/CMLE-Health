@@ -121,14 +121,17 @@ escalation).
 Run with the scripts in `scripts/` (see §6). Headline metric: closed-set
 accuracy on `test_clean.csv`; secondary: accuracy @ coverage.
 
-### 4.1 Baselines (pair cross-encoder features, 30 epochs, lr 3e-4, 2026-08-28)
+### 4.1 Baselines & main config (pair features, 30 epochs, lr 3e-4, 2026-08-28 FINAL)
 
 | Model | Acc (closed-set) | Acc@70%cov |
 |-------|------|------|
 | BERT-base + MLP (text only) | 0.3110 | 0.3236 |
 | CLIP ViT-B/32 + MLP (image + options) | **0.3670** | 0.3893 |
 | Concatenation MLP (q+img+opt) | 0.3610 | 0.3836 |
-| **ConsultNet (full)** | 0.3565 | 0.3836 |
+| **ConsultNet full + load-balance 0.1** | 0.3655 | 0.3850 |
+| ConsultNet full + lb0.1 + MU | 0.3655 | 0.3871 |
+| w/o DGM (equal weights) | 0.3615 | 0.3843 |
+| w/o universal / specialized expert | 0.3605 | 0.3929 |
 
 ### 4.2 Published SOTA comparison (reported numbers)
 
@@ -139,7 +142,7 @@ accuracy on `test_clean.csv`; secondary: accuracy @ coverage.
 | BioMedCLIP | 33.0 | Zhang et al. 2023 |
 | MedICap-GPT-4 | 27.2 | Zhang et al. 2024 |
 | Chance | 25.0 | — |
-| **ConsultNet (ours, ~1M params)** | 0.3565 (referral: **0.4007 @70%cov**) | this work |
+| **ConsultNet (ours, ~1M params)** | 0.3655 (referral: **0.4007 @70%cov**) | this work |
 
 Notes: ours is a frozen-backbone discriminative model (~1M trainable params, no
 LLM, no instruction tuning); MedVInT-TE is a generative VLM (~400M+ params).
@@ -147,33 +150,33 @@ Closed-set acc is still below MedVInT-TE, but HRO referral (accuracy @ coverage)
 reaches 0.4007 at 70% coverage — the SOTA line itself lacks uncertainty
 quantification (noted by Frontiers 2026 review).
 
-### 4.3 Ablations (final matrix, 30 epochs, lr 3e-4, no aux losses)
+### 4.3 Ablations (final matrix, 30 epochs, lr 3e-4, no aux losses, lb=0.1 main)
 
 | Variant | Acc | Acc@70%cov |
 |---------|-----|-----|
-| full | 0.3565 | 0.3836 |
+| full + lb0.1 | 0.3655 | 0.3850 |
 | w/o DGM (equal weights) | 0.3615 | 0.3843 |
-| w/o universal expert | 0.3610 | **0.4007** |
-| w/o specialized expert | 0.3610 | **0.4007** |
-| w/o MU (no consensus loss) | ≡ full (consensus KL ≈ 0, agreement 0.98) | |
+| w/o universal expert | 0.3605 | 0.3929 |
+| w/o specialized expert | 0.3605 | 0.3929 |
+| + MU consensus (lambda-mu 0.1) | 0.3655 | 0.3871 |
 
-Diagnosis: the DGM gate collapses to almost-always-pick-visual-expert
-(mean gate_w [0.165, 0.831, 0.003, 0.001], entropy 0.40) — classic MoE
-mode collapse, no role division learned (see EXPERIMENTS.md). w/o-univ ≡
-w/o-spec exactly: the two "generalist" experts take identical input concat
-(text+img+opt) so dropping either leaves the same net.
+Load-balancing loss fixes gate mode collapse (gate entropy 0.40→1.23; DGM now
++0.4pp vs equal weights). w/o-univ ≡ w/o-spec exactly (identical input concat —
+architecturally the same 3-expert net). See EXPERIMENTS.md + REPORT.md for the
+full 4-round history (chance-level round-1 → pair fix → mode-collapse diagnosis
+→ balance fix) and handover notes.
 
-### 4.4 HRO referral analysis (final matrix, 30 epochs)
+### 4.4 HRO referral analysis (final matrix v2, 30 epochs)
 
 Accuracy @ coverage (entropy-threshold referral):
 
-| Coverage | full | w/o-univ/spec | clip-only |
+| Coverage | full+lb | w/o-univ/spec | clip-only |
 |----------|------|---------------|-----------|
-| 100% | 0.3565 | 0.3610 | 0.3670 |
-| 95% | 0.3625 | 0.3672 | 0.3733 |
-| 90% | 0.3633 | 0.3717 | 0.3733 |
-| 80% | 0.3706 | 0.3810 | 0.3794 |
-| 70% | 0.3836 | 0.4007 | 0.3893 |
+| 100% | 0.3655 | 0.3605 | 0.3670 |
+| 95% | 0.3653 | 0.3626 | 0.3737 |
+| 90% | 0.3683 | 0.3678 | 0.3733 |
+| 80% | 0.3731 | 0.3775 | 0.3756 |
+| 70% | 0.3850 | **0.3929** | 0.3893 |
 
 ---
 
