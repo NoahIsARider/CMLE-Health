@@ -1,0 +1,8 @@
+{
+  "tag": "vlm_zeroshot_300b",
+  "model": "deepseek-v4-flash-vision-exp",
+  "n": 300,
+  "acc": 0.3233,
+  "errors": [],
+  "n_errors": 0
+}

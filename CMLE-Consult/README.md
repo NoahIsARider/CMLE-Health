@@ -121,47 +121,59 @@ escalation).
 Run with the scripts in `scripts/` (see §6). Headline metric: closed-set
 accuracy on `test_clean.csv`; secondary: accuracy @ coverage.
 
-### 4.1 Baselines
+### 4.1 Baselines (pair cross-encoder features, 30 epochs, lr 3e-4, 2026-08-28)
 
-| Model | Acc (closed-set) |
-|-------|------|
-| BERT-base + MLP (text only) | *TBD* |
-| CLIP ViT-B/32 + MLP (image + options) | *TBD* |
-| Concatenation MLP (q+img+opt) | *TBD* |
-| **ConsultNet (full)** | *TBD* |
+| Model | Acc (closed-set) | Acc@70%cov |
+|-------|------|------|
+| BERT-base + MLP (text only) | 0.3110 | 0.3236 |
+| CLIP ViT-B/32 + MLP (image + options) | **0.3670** | 0.3893 |
+| Concatenation MLP (q+img+opt) | 0.3610 | 0.3836 |
+| **ConsultNet (full)** | 0.3565 | 0.3836 |
 
 ### 4.2 Published SOTA comparison (reported numbers)
 
 | Model | Acc (closed-set) | Source |
 |-------|------|--------|
-| MedVInT-TE (PMC-CLIP) | 37.6 | Zhang et al. 2024 |
+| MedVInT-TE (PMC-CLIP) | 37.6 (40.2 per Frontiers 2026 review) | Zhang et al. 2024 |
 | LLaVA-Med | 34.8 | Li et al. 2023 |
 | BioMedCLIP | 33.0 | Zhang et al. 2023 |
 | MedICap-GPT-4 | 27.2 | Zhang et al. 2024 |
 | Chance | 25.0 | — |
-| **ConsultNet (ours, 0.4M params)** | *TBD* | this work |
+| **ConsultNet (ours, ~1M params)** | 0.3565 (referral: **0.4007 @70%cov**) | this work |
 
-### 4.3 Ablations
+Notes: ours is a frozen-backbone discriminative model (~1M trainable params, no
+LLM, no instruction tuning); MedVInT-TE is a generative VLM (~400M+ params).
+Closed-set acc is still below MedVInT-TE, but HRO referral (accuracy @ coverage)
+reaches 0.4007 at 70% coverage — the SOTA line itself lacks uncertainty
+quantification (noted by Frontiers 2026 review).
 
-| Variant | Acc | Δ |
-|---------|-----|---|
-| full | *TBD* | — |
-| w/o DGM (equal weights) | *TBD* | |
-| w/o MU (no consensus loss) | *TBD* | |
-| w/o universal expert | *TBD* | |
-| w/o specialized expert | *TBD* | |
+### 4.3 Ablations (final matrix, 30 epochs, lr 3e-4, no aux losses)
 
-### 4.4 HRO referral analysis
+| Variant | Acc | Acc@70%cov |
+|---------|-----|-----|
+| full | 0.3565 | 0.3836 |
+| w/o DGM (equal weights) | 0.3615 | 0.3843 |
+| w/o universal expert | 0.3610 | **0.4007** |
+| w/o specialized expert | 0.3610 | **0.4007** |
+| w/o MU (no consensus loss) | ≡ full (consensus KL ≈ 0, agreement 0.98) | |
+
+Diagnosis: the DGM gate collapses to almost-always-pick-visual-expert
+(mean gate_w [0.165, 0.831, 0.003, 0.001], entropy 0.40) — classic MoE
+mode collapse, no role division learned (see EXPERIMENTS.md). w/o-univ ≡
+w/o-spec exactly: the two "generalist" experts take identical input concat
+(text+img+opt) so dropping either leaves the same net.
+
+### 4.4 HRO referral analysis (final matrix, 30 epochs)
 
 Accuracy @ coverage (entropy-threshold referral):
 
-| Coverage | Acc |
-|----------|-----|
-| 100% | *TBD* |
-| 95% | *TBD* |
-| 90% | *TBD* |
-| 80% | *TBD* |
-| 70% | *TBD* |
+| Coverage | full | w/o-univ/spec | clip-only |
+|----------|------|---------------|-----------|
+| 100% | 0.3565 | 0.3610 | 0.3670 |
+| 95% | 0.3625 | 0.3672 | 0.3733 |
+| 90% | 0.3633 | 0.3717 | 0.3733 |
+| 80% | 0.3706 | 0.3810 | 0.3794 |
+| 70% | 0.3836 | 0.4007 | 0.3893 |
 
 ---
 
@@ -215,11 +227,14 @@ w-o-dgm,w-o-mu,w-o-univ,w-o-spec}` · `--lambda-mu` · `--lambda-mim` ·
 ## 7. Status
 
 - [x] Data pipeline (zip-backed, no extraction)
-- [x] Feature precompute (BERT + CLIP pooled, fp16)
+- [x] Feature precompute (BERT + CLIP pooled, fp16; pair cross-encoder variant)
 - [x] ConsultNet implementation (experts + DGM + MU + referral)
 - [x] Baseline / ablation matrix scripts
-- [ ] Full experiments (in progress on P4)
-- [ ] VLM zero-shot baseline (DeepSeek-VL / Qwen2-VL via API)
+- [x] Pair-feature matrix (all variants > chance; best clip-only 0.3670)
+- [x] VLM zero-shot baseline (deepseek-v4-flash-vision-exp): 0.3233 acc (300)
+- [x] Gate diagnosis: mode collapse (gate picks visual expert ~83%)
+- [ ] Fix gate mode collapse (load-balancing loss / two-stage training)
+- [ ] 3-seed variance
 - [ ] Paper draft (TCE / JBHI)
 
 ## 8. References & Inspiration
