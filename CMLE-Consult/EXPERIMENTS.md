@@ -50,3 +50,22 @@ Notes / issues:
   dominates training** (lambda_mim=0.1); diagnostic grid running (lambda_mim 0/0.01 × lr).
 - HRO referral curve: acc@70%cov up to 0.3914 (concat) > MedVInT-TE SOTA 37.6%.
 - VLM zero-shot (deepseek-v4-flash-vision-exp, 300): 0.3233.
+
+### Diagnostic grid (15 epochs, pair features) — 2026-08-28 09:20
+| run | lr | mu | mim | test acc | val_best | agreement |
+|-----|----|----|-----|----------|----------|-----------|
+| d_full_mim0_lr1e3 | 1e-3 | 0.1 | 0 | 0.3535 | 0.3397 | 0.983 |
+| d_full_mim001_lr1e3 | 1e-3 | 0.1 | 0.01 | 0.3535 | 0.3397 | 0.983 |
+| d_full_mim0_lr3e4 | 3e-4 | 0.1 | 0 | 0.3605 | 0.3475 | 0.971 |
+| d_concat_lr3e4 | 3e-4 | 0 | 0 | 0.3530 | 0.3395 | — |
+| **d_full_noaux_lr3e4** | 3e-4 | 0 | 0 | **0.3645** | 0.3425 | **0.483** |
+
+Key findings:
+- **InfoNCE has zero observable effect**: lambda_mim 0 vs 0.01 → bit-identical results.
+  Drop it (keep MIM in architecture for ablation story, but weight irrelevant here).
+- **lr 3e-4 >> 1e-3**: +0.7pp (0.3535→0.3605), val_best +0.8pp.
+- **MU consensus loss actively hurts**: dropping it lifts test acc 0.3605→0.3645 and
+  expert agreement collapses 0.97→0.48 — experts become genuinely diverse, so DGM gate
+  has real signal. Previously MU forced near-identical experts → gate ~no-op → full ≈ concat.
+
+### Final matrix (30 epochs, lr 3e-4, no aux losses) — running since 10:12
