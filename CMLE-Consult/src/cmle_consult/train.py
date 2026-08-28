@@ -75,10 +75,10 @@ class FlatMLP(nn.Module):
     def __init__(self, in_dim: int, hidden: int = 256, n_opts: int = 4):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(in_dim, hidden), nn.GELU(), nn.Dropout(0.1),
-                                 nn.Linear(hidden, n_opts))
+                                 nn.Linear(hidden, 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        return self.net(x).squeeze(-1)
 
 
 def build_model(args, device):
@@ -170,6 +170,7 @@ def main():
     ap.add_argument("--features-dir", default="/root/cmle-consult/features")
     ap.add_argument("--train", default="train.pt")
     ap.add_argument("--test", default="test_clean.pt")
+    ap.add_argument("--pair", action="store_true", help="use pair-encoded option features (train_pair.pt / test_clean_pair.pt)")
     ap.add_argument("--variant", default="full",
                     choices=["bert-only", "clip-only", "concat", "full",
                              "w-o-dgm", "w-o-mu", "w-o-univ", "w-o-spec"])
@@ -192,6 +193,10 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[env] device={device} seed={args.seed} variant={args.variant}")
 
+    if args.pair:
+        args.train = args.train.replace(".pt", "_pair.pt")
+        args.test = args.test.replace(".pt", "_pair.pt")
+
     train_ds = FeatDS(os.path.join(args.features_dir, args.train))
     test_ds = FeatDS(os.path.join(args.features_dir, args.test))
     if args.limit > 0:
@@ -210,6 +215,19 @@ def main():
     model = build_model(args, device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"[model] {type(model).__name__} trainable params: {n_params:,}")
+
+    # sanity: forward-shape check (catches option-dimension bugs instantly)
+    with torch.no_grad():
+        q = torch.randn(2, 768, device=device)
+        img = torch.randn(2, 768, device=device)
+        opt = torch.randn(2, 4, 768, device=device)
+        if isinstance(model, ConsultNet):
+            o = model(q, img, opt)
+            assert o["logits"].shape == (2, 4), f"bad logits shape: {o['logits'].shape}"
+        else:
+            lg = forward_baseline(model, args.variant, {"q": q, "img": img, "opt": opt}, device)
+            assert lg.shape == (2, 4), f"bad logits shape: {lg.shape}"
+    print("[sanity] forward shape OK")
 
     if args.eval_only:
         if args.ckpt:

@@ -26,8 +26,8 @@ from PIL import Image
 
 from cmle_consult.data import CHOICES, ZipImageDB
 
-API_URL = "https://api.deepseek.com/chat/completions"
-MODEL = "deepseek-v4-flash-vision-exp"
+API_URL = (os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com") + "/chat/completions"
+MODEL = os.environ.get("DEEPSEEK_VISION_MODEL") or "deepseek-v4-flash-vision-exp"
 
 PROMPT = (
     "You are a medical imaging assistant. Given the medical image and the "
@@ -50,7 +50,7 @@ def call_vlm(api_key: str, image_bytes: bytes, prompt: str, timeout: int = 60) -
             ],
         }],
         "temperature": 0.0,
-        "max_tokens": 8,
+        "max_tokens": 300,   # vision model is a reasoning model: it needs budget for reasoning_content before content
     }
     req = urllib.request.Request(
         API_URL, data=json.dumps(body).encode(),
@@ -79,7 +79,7 @@ def main():
     if args.limit > 0:
         rng = random.Random(args.seed)
         rows = rng.sample(rows, min(args.limit, len(rows)))
-    db = ZipImageDB([os.path.join(args.data_dir, "images.zip")])
+    db = ZipImageDB([os.path.join(args.data_dir, "images.zip")], memory=True)
 
     correct = total = 0
     errs = []

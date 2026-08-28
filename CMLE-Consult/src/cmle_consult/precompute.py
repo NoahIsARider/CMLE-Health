@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import torch
@@ -28,6 +29,7 @@ from transformers import (
 from cmle_consult.data import CHOICES, ZipImageDB, load_csv
 
 DIM = 768
+N_IMG_WORKERS = 8
 
 
 def build_encoders(hf_mirror: bool):
@@ -49,11 +51,16 @@ def main():
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--max-q", type=int, default=64, help="max question tokens")
     ap.add_argument("--max-opt", type=int, default=32, help="max option tokens")
+    ap.add_argument("--pair-max-len", type=int, default=48, help="pair [q SEP opt] max length (cap = huge speedup; covers p95)")
     ap.add_argument("--limit", type=int, default=0, help="limit rows (debug)")
+    ap.add_argument("--memory", action="store_true", help="load zip into RAM for parallel decode (HDD boxes)")
+    ap.add_argument("--pair", action="store_true", help="encode options as [question SEP option] pairs (cross-encoder)")
     ap.add_argument("--hf-mirror", action="store_true")
     args = ap.parse_args()
 
     tag = args.tag or os.path.splitext(os.path.basename(args.csv))[0]
+    if args.pair:
+        tag = f"{tag}_pair"
     os.makedirs(args.out, exist_ok=True)
     out_path = os.path.join(args.out, f"{tag}.pt")
 
@@ -64,7 +71,7 @@ def main():
     print(f"[data] {tag}: {N} rows from {args.csv}")
 
     db = ZipImageDB([os.path.join(args.data_dir, "images.zip"),
-                     os.path.join(args.data_dir, "images_2.zip")])
+                     os.path.join(args.data_dir, "images_2.zip")], memory=args.memory)
     bert, tok, clip, proc = build_encoders(args.hf_mirror)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bert.to(device); clip.to(device)
@@ -84,33 +91,57 @@ def main():
         qtoks = tok(list(rows["Question"].astype(str)), padding=True, truncation=True,
                     max_length=args.max_q, return_tensors="pt").to(device)
         with torch.no_grad():
-            qf = bert(**qtoks).pooler_output.float().cpu()          # (bs, 768)
+            with torch.autocast("cuda", dtype=torch.float16):
+                qf = bert(**qtoks).pooler_output.float().cpu()          # (bs, 768)
         q_feats[i:i + bs] = qf.half()
 
-        # ---- options: flatten (bs*4,) ----
-        opts = []
-        for c in CHOICES:
-            opts.extend(rows[f"Choice {c}"].astype(str).tolist())
-        otoks = tok(opts, padding=True, truncation=True, max_length=args.max_opt,
-                    return_tensors="pt").to(device)
-        with torch.no_grad():
-            of = bert(**otoks).pooler_output.float().cpu()           # (bs*4, 768)
-        opt_feats[i:i + bs] = of.view(bs, 4, DIM).half()
+        # ---- options: flatten (bs*4,) or pair-encode [q SEP opt_i] ----
+        if args.pair:
+            pair_texts = []
+            for _, r in rows.iterrows():
+                q = str(r["Question"]).strip()
+                for c in CHOICES:
+                    pair_texts.append(f"{q} [SEP] {str(r[f'Choice {c}']).strip()}")
+            ptoks = tok(pair_texts, padding=True, truncation=True,
+                        max_length=args.pair_max_len, return_tensors="pt").to(device)
+            with torch.no_grad():
+                with torch.autocast("cuda", dtype=torch.float16):
+                    pf = bert(**ptoks).pooler_output.float().cpu()
+            opt_feats[i:i + bs] = pf.view(bs, 4, DIM).half()
+        else:
+            opts = []
+            for c in CHOICES:
+                opts.extend(rows[f"Choice {c}"].astype(str).tolist())
+            otoks = tok(opts, padding=True, truncation=True, max_length=args.max_opt,
+                        return_tensors="pt").to(device)
+            with torch.no_grad():
+                with torch.autocast("cuda", dtype=torch.float16):
+                    of = bert(**otoks).pooler_output.float().cpu()           # (bs*4, 768)
+            opt_feats[i:i + bs] = of.view(bs, 4, DIM).half()
 
-        # ---- images ----
-        imgs = []
-        for p in rows["Figure_path"]:
-            im = db.open_image(str(p).strip())
-            if im is None:
-                missing_img += 1
-                im = Image.new("RGB", (224, 224), (0, 0, 0))
-            imgs.append(im)
-        px = proc(images=imgs, return_tensors="pt")["pixel_values"].to(device)
+        # ---- images: parallel decode (thread-safe zipdb) + chunked batch resize ----
+        # per-call CLIPImageProcessor overhead is ~100ms — NEVER call it per-image
+        # in threads; chunked batch calls amortize it.
+        paths = [str(p).strip() for p in rows["Figure_path"]]
+        IMG_CHUNK = 16
+
+        def load_chunk(chunk_paths):
+            ims = [db.open_image(p) for p in chunk_paths]
+            miss = sum(1 for im in ims if im is None)
+            ims = [im if im is not None else Image.new("RGB", (224, 224), (0, 0, 0)) for im in ims]
+            return proc(images=ims, return_tensors="pt")["pixel_values"], miss
+
+        with ThreadPoolExecutor(max_workers=N_IMG_WORKERS) as ex:
+            chunks = [paths[i:i + IMG_CHUNK] for i in range(0, len(paths), IMG_CHUNK)]
+            results = list(ex.map(load_chunk, chunks))
+        missing_img += sum(r[1] for r in results)
+        px = torch.cat([r[0] for r in results]).to(device)
         with torch.no_grad():
-            iff = clip(pixel_values=px).pooler_output.float().cpu()  # (bs, 768)
+            with torch.autocast("cuda", dtype=torch.float16):
+                iff = clip(pixel_values=px).pooler_output.float().cpu()  # (bs, 768)
         img_feats[i:i + bs] = iff.half()
 
-        labels[i:i + bs] = torch.tensor([label_to_idx(r) for _, r in rows.iterrows()])
+        labels[i:i + bs] = torch.tensor([label_to_idx(r["Answer_label"]) for _, r in rows.iterrows()])
 
         el = time.time() - t0
         print(f"[precompute {tag}] {min(i + bs, N)}/{N}  ({el:.0f}s, ~{el / max(min(i + bs, N), 1) * (N - i - bs):.0f}s left)")

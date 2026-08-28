@@ -26,15 +26,17 @@ class RoleExpert(nn.Module):
 
     def __init__(self, in_dim: int, n_opts: int = 4, hidden: int = 256, dropout: float = 0.1):
         super().__init__()
+        self.n_opts = n_opts
         self.net = nn.Sequential(
             nn.Linear(in_dim, hidden),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden, n_opts),
+            nn.Linear(hidden, 1),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        # (B, n_opts, in) -> (B, n_opts, 1) -> (B, n_opts)
+        return self.net(x).squeeze(-1)
 
 
 class ConsultNet(nn.Module):
