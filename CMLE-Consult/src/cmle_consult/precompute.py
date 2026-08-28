@@ -32,13 +32,13 @@ DIM = 768
 N_IMG_WORKERS = 8
 
 
-def build_encoders(hf_mirror: bool):
+def build_encoders(hf_mirror: bool, clip_model: str = "openai/clip-vit-base-patch32"):
     if hf_mirror:
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"  # must be set before import actually;
     bert = BertModel.from_pretrained("bert-base-uncased").eval()
     tok = AutoTokenizer.from_pretrained("bert-base-uncased")
-    clip = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32").eval()
-    proc = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    clip = CLIPVisionModel.from_pretrained(clip_model).eval()
+    proc = CLIPImageProcessor.from_pretrained(clip_model)
     return bert, tok, clip, proc
 
 
@@ -56,6 +56,8 @@ def main():
     ap.add_argument("--memory", action="store_true", help="load zip into RAM for parallel decode (HDD boxes)")
     ap.add_argument("--pair", action="store_true", help="encode options as [question SEP option] pairs (cross-encoder)")
     ap.add_argument("--hf-mirror", action="store_true")
+    ap.add_argument("--clip-model", default="openai/clip-vit-base-patch32",
+                    help="HF CLIP vision model id (e.g. flaviagiammarino/pubmed-clip-vit-base-patch32)")
     args = ap.parse_args()
 
     tag = args.tag or os.path.splitext(os.path.basename(args.csv))[0]
@@ -72,7 +74,7 @@ def main():
 
     db = ZipImageDB([os.path.join(args.data_dir, "images.zip"),
                      os.path.join(args.data_dir, "images_2.zip")], memory=args.memory)
-    bert, tok, clip, proc = build_encoders(args.hf_mirror)
+    bert, tok, clip, proc = build_encoders(args.hf_mirror, args.clip_model)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bert.to(device); clip.to(device)
 
