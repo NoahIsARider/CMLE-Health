@@ -68,4 +68,26 @@ Key findings:
   expert agreement collapses 0.97→0.48 — experts become genuinely diverse, so DGM gate
   has real signal. Previously MU forced near-identical experts → gate ~no-op → full ≈ concat.
 
-### Final matrix (30 epochs, lr 3e-4, no aux losses) — running since 10:12
+### Final matrix (30 epochs, lr 3e-4, no aux losses) — 2026-08-28 11:04 done
+| variant | test acc | acc@90% | acc@70% | val_best | agreement |
+|---------|----------|---------|---------|----------|-----------|
+| bert-only | 0.3110 | 0.3167 | 0.3236 | 0.3298 | 1.0 |
+| clip-only | **0.3670** | 0.3733 | 0.3893 | 0.3483 | 1.0 |
+| concat | 0.3610 | 0.3683 | 0.3836 | 0.3443 | 1.0 |
+| full | 0.3565 | 0.3633 | 0.3836 | 0.3444 | 0.147 |
+| w-o-dgm | 0.3615 | 0.3633 | 0.3843 | 0.3496 | 0.847 |
+| w-o-univ | 0.3610 | 0.3717 | **0.4007** | 0.3498 | 0.251 |
+| w-o-spec | 0.3610 | 0.3717 | **0.4007** | 0.3498 | 0.251 |
+
+### Gate diagnosis (analyze_gate.py on f_full.pt, test set)
+- expert solo acc: t=0.272, v=0.3475, a=0.2745, u=0.2735
+- **mean gate_w = [0.165, 0.831, 0.003, 0.001], gate entropy 0.40** → gate collapsed to
+  almost-always-pick-v (visual expert). No role division learned; a/u experts get ~0 weight.
+- Why full < clip-only: v expert (same 1536-d img+opt input as clip-only) reaches only
+  0.3475 vs clip-only 0.367 — shared training + gate dilution weakens it; t/a/u experts
+  add noise, not complementarity.
+- verdict: classic MoE mode-collapse; needs load-balancing loss / two-stage expert
+  pretrain / confidence-aware gate (see next).
+- MedVInT-TE SOTA: 37.6% (our earlier note) — Frontiers 2026 review lists 40.2%;
+  both > our best 36.7% acc, but HRO referral acc@70%cov reaches 0.4007 (w-o-univ/spec)
+  and 0.3893 (clip-only).
